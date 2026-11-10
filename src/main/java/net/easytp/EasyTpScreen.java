@@ -8,6 +8,7 @@ import net.minecraft.client.gui.widget.ButtonWidget;
 import net.minecraft.client.network.ClientPlayNetworkHandler;
 import net.minecraft.client.network.PlayerListEntry;
 import net.minecraft.text.Text;
+import org.lwjgl.glfw.GLFW;
 
 import java.util.ArrayList;
 import java.util.Comparator;
@@ -153,6 +154,16 @@ public class EasyTpScreen extends Screen {
 
     // --------------------------------------------------------------- actions
 
+    /** Shift check straight from GLFW (Screen.hasShiftDown was removed in 1.21.11). */
+    private static boolean isShiftDown() {
+        long window = GLFW.glfwGetCurrentContext();
+        if (window == 0L) {
+            return false;
+        }
+        return GLFW.glfwGetKey(window, GLFW.GLFW_KEY_LEFT_SHIFT) == GLFW.GLFW_PRESS
+                || GLFW.glfwGetKey(window, GLFW.GLFW_KEY_RIGHT_SHIFT) == GLFW.GLFW_PRESS;
+    }
+
     private void onRowClicked(String name, boolean left) {
         if (!playerNames.contains(name)) {
             return; // player is no longer online
@@ -163,7 +174,7 @@ public class EasyTpScreen extends Screen {
             return;
         }
 
-        if (hasShiftDown()) {
+        if (isShiftDown()) {
             if (!targets.remove(name)) {
                 targets.add(name);
             }
@@ -248,6 +259,14 @@ public class EasyTpScreen extends Screen {
         context.drawTextWithShadow(textRenderer, Text.literal(title), x + 2, listTop - 14, 0xFFFFFFFF);
     }
 
+    /** 1px outline made from fills (DrawContext.drawBorder was removed in 1.21.11). */
+    private static void drawOutline(DrawContext context, int x, int y, int w, int h, int color) {
+        context.fill(x, y, x + w, y + 1, color);             // top
+        context.fill(x, y + h - 1, x + w, y + h, color);     // bottom
+        context.fill(x, y + 1, x + 1, y + h - 1, color);     // left
+        context.fill(x + w - 1, y + 1, x + w, y + h - 1, color); // right
+    }
+
     @Override
     public void render(DrawContext context, int mouseX, int mouseY, float delta) {
         super.render(context, mouseX, mouseY, delta);
@@ -267,7 +286,7 @@ public class EasyTpScreen extends Screen {
             if (selected) {
                 context.fill(row.x(), row.y(), row.x() + row.w(), row.y() + h,
                         row.left() ? COLOR_DEST : COLOR_TARGET);
-                context.drawBorder(row.x(), row.y(), row.w(), h,
+                drawOutline(context, row.x(), row.y(), row.w(), h,
                         row.left() ? COLOR_DEST_BORDER : COLOR_TARGET_BORDER);
             }
 
