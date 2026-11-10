@@ -1,0 +1,19 @@
+{
+  "schemaVersion": 1,
+  "id": "easytp",
+  "version": "${version}",
+  "name": "Easy TP",
+  "description": "Client-side GUI to teleport online players to another player in one click. Works on any server where you have permission to use /tp.",
+  "authors": ["Priyanshu1lyt"],
+  "license": "MIT",
+  "environment": "client",
+  "entrypoints": {
+    "client": ["net.easytp.EasyTpClient"]
+  },
+  "depends": {
+    "fabricloader": ">=0.18.1",
+    "minecraft": "~1.21.11",
+    "java": ">=21",
+    "fabric-api": "*"
+  }
+}
