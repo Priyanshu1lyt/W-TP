@@ -1,0 +1,23 @@
+{
+  "schemaVersion": 1,
+  "id": "easytp",
+  "version": "${version}",
+  "name": "Easy TP",
+  "description": "A simple client-side player teleport interface.",
+  "authors": [
+    "NotHeartYT"
+  ],
+  "license": "MIT",
+  "environment": "client",
+  "entrypoints": {
+    "client": [
+      "com.notheartyt.easytp.EasyTpClient"
+    ]
+  },
+  "depends": {
+    "fabricloader": ">=0.18.4",
+    "minecraft": "~1.21.11",
+    "java": ">=21",
+    "fabric-api": "*"
+  }
+}
