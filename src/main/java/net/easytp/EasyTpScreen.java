@@ -8,6 +8,7 @@ import net.minecraft.client.gui.widget.ButtonWidget;
 import net.minecraft.client.network.ClientPlayNetworkHandler;
 import net.minecraft.client.network.PlayerListEntry;
 import net.minecraft.text.Text;
+import net.minecraft.util.Formatting;
 import org.lwjgl.glfw.GLFW;
 
 import java.util.ArrayList;
@@ -18,20 +19,30 @@ import java.util.Set;
 
 /**
  * Easy TP GUI.
- * LEFT  = destination (pick one).
- * RIGHT = targets. Click a player to teleport them to the destination instantly.
- *         Shift+click toggles multi-selection; clicking a selected player teleports all selected.
+ * LEFT  = WHO gets teleported (EVERYONE row on top, multi-select).
+ * RIGHT = WHERE they get teleported (one destination).
+ *
+ * Left list: click a player = teleport them now. Shift+click = toggle selection.
+ * Clicking a selected player (when 2+ are selected) teleports all selected.
+ * Click EVERYONE = select all online players and teleport them. Shift+click EVERYONE = select/clear all only.
  */
 public class EasyTpScreen extends Screen {
     private static final int ROW_H = 22;
     private static final int HEAD = 12;
 
     private static final int COLOR_PANEL = 0xCC101014;
-    private static final int COLOR_DEST = 0x6638C060;
-    private static final int COLOR_DEST_BORDER = 0xFF4ADE80;
-    private static final int COLOR_TARGET = 0x663B82F6;
-    private static final int COLOR_TARGET_BORDER = 0xFF60A5FA;
+    // left list (targets)
+    private static final int COLOR_TARGET = 0x6638C060;
+    private static final int COLOR_TARGET_BORDER = 0xFF4ADE80;
+    // right list (destination)
+    private static final int COLOR_DEST = 0x663B82F6;
+    private static final int COLOR_DEST_BORDER = 0xFF60A5FA;
+    // EVERYONE row
+    private static final int COLOR_EVERYONE_IDLE = 0x33FFC83D;
+    private static final int COLOR_EVERYONE_ACTIVE = 0x99FFC83D;
+    private static final int COLOR_EVERYONE_BORDER = 0xFFFFC83D;
 
+    /** name == null means the EVERYONE row. */
     private record Row(String name, PlayerListEntry entry, int x, int y, int w, boolean left) {}
 
     private final List<PlayerListEntry> players = new ArrayList<>();
@@ -41,8 +52,8 @@ public class EasyTpScreen extends Screen {
     private String destination = null;
     private final Set<String> targets = new LinkedHashSet<>();
 
-    private int destScroll = 0;
-    private int targetScroll = 0;
+    private int leftScroll = 0;
+    private int rightScroll = 0;
 
     private int colW;
     private int leftX;
@@ -83,19 +94,39 @@ public class EasyTpScreen extends Screen {
         buildColumn(false);
     }
 
+    /** Number of rows in a column. The left column has an extra EVERYONE row on top. */
+    private int itemCount(boolean left) {
+        if (players.isEmpty()) {
+            return 0;
+        }
+        return left ? players.size() + 1 : players.size();
+    }
+
     private void buildColumn(boolean left) {
-        int offset = left ? destScroll : targetScroll;
+        int count = itemCount(left);
+        int offset = left ? leftScroll : rightScroll;
         int x = left ? leftX : rightX;
         for (int i = 0; i < visibleRows; i++) {
             int idx = offset + i;
-            if (idx >= players.size()) {
+            if (idx >= count) {
                 break;
             }
-            PlayerListEntry entry = players.get(idx);
-            String name = playerNames.get(idx);
             int y = listTop + i * ROW_H;
 
-            ButtonWidget button = ButtonWidget.builder(Text.empty(), b -> onRowClicked(name, left))
+            final String name = left
+                    ? (idx == 0 ? null : playerNames.get(idx - 1))
+                    : playerNames.get(idx);
+            final PlayerListEntry entry = name == null ? null : players.get(left ? idx - 1 : idx);
+
+            ButtonWidget button = ButtonWidget.builder(Text.empty(), b -> {
+                        if (!left) {
+                            onDestinationClicked(name);
+                        } else if (name == null) {
+                            onEveryoneClicked();
+                        } else {
+                            onTargetClicked(name);
+                        }
+                    })
                     .dimensions(x, y, colW, ROW_H - 2)
                     .build();
             addDrawableChild(button);
@@ -134,14 +165,18 @@ public class EasyTpScreen extends Screen {
         }
         targets.retainAll(playerNames);
 
-        destScroll = clampScroll(destScroll);
-        targetScroll = clampScroll(targetScroll);
+        leftScroll = clampScroll(leftScroll, itemCount(true));
+        rightScroll = clampScroll(rightScroll, itemCount(false));
         return true;
     }
 
-    private int clampScroll(int value) {
-        int max = Math.max(0, players.size() - visibleRows);
+    private int clampScroll(int value, int count) {
+        int max = Math.max(0, count - visibleRows);
         return Math.max(0, Math.min(max, value));
+    }
+
+    private boolean everyoneSelected() {
+        return !playerNames.isEmpty() && targets.containsAll(playerNames);
     }
 
     @Override
@@ -164,14 +199,19 @@ public class EasyTpScreen extends Screen {
                 || GLFW.glfwGetKey(window, GLFW.GLFW_KEY_RIGHT_SHIFT) == GLFW.GLFW_PRESS;
     }
 
-    private void onRowClicked(String name, boolean left) {
+    /** RIGHT list: choose (or un-choose) the destination. */
+    private void onDestinationClicked(String name) {
         if (!playerNames.contains(name)) {
             return; // player is no longer online
         }
-        if (left) {
-            destination = name.equals(destination) ? null : name;
-            EasyTpClient.clearStatus();
-            return;
+        destination = name.equals(destination) ? null : name;
+        EasyTpClient.clearStatus();
+    }
+
+    /** LEFT list: a single player. */
+    private void onTargetClicked(String name) {
+        if (!playerNames.contains(name)) {
+            return; // player is no longer online
         }
 
         if (isShiftDown()) {
@@ -188,6 +228,26 @@ public class EasyTpScreen extends Screen {
         }
     }
 
+    /** LEFT list: the EVERYONE row. */
+    private void onEveryoneClicked() {
+        if (playerNames.isEmpty()) {
+            return;
+        }
+
+        if (isShiftDown()) {
+            // Select / clear everyone without teleporting.
+            if (everyoneSelected()) {
+                targets.clear();
+            } else {
+                targets.addAll(playerNames);
+            }
+            return;
+        }
+
+        targets.addAll(playerNames);
+        teleport(new ArrayList<>(playerNames));
+    }
+
     private void teleport(List<String> names) {
         MinecraftClient client = MinecraftClient.getInstance();
         ClientPlayNetworkHandler handler = client.getNetworkHandler();
@@ -195,7 +255,7 @@ public class EasyTpScreen extends Screen {
             return;
         }
         if (destination == null) {
-            EasyTpClient.setStatus("Select a destination on the left first", true);
+            EasyTpClient.setStatus("Select a destination on the right first", true);
             return;
         }
         if (!playerNames.contains(destination)) {
@@ -203,27 +263,30 @@ public class EasyTpScreen extends Screen {
             EasyTpClient.setStatus("Destination player is no longer online", true);
             return;
         }
+        if (names.isEmpty()) {
+            EasyTpClient.setStatus("Select a player to teleport", true);
+            return;
+        }
 
-        String self = client.getSession().getUsername();
         int sent = 0;
-        for (String target : names) {
+        String last = null;
+        // LinkedHashSet removes duplicates so we never send the same command twice.
+        for (String target : new LinkedHashSet<>(names)) {
             if (!playerNames.contains(target)) {
-                continue;
-            }
-            if (target.equalsIgnoreCase(self)) {
-                EasyTpClient.setStatus("You can't teleport yourself", true);
-                continue;
+                continue; // went offline
             }
             if (target.equals(destination)) {
-                EasyTpClient.setStatus("Target and destination are the same player", true);
-                continue;
+                continue; // already at the destination: harmless no-op, no command, no error
             }
             EasyTpClient.markCommandSent();
             handler.sendChatCommand("tp " + target + " " + destination);
-            EasyTpClient.setStatus("/tp " + target + " " + destination, false);
             sent++;
+            last = target;
         }
-        if (sent > 1) {
+
+        if (sent == 1) {
+            EasyTpClient.setStatus("/tp " + last + " " + destination, false);
+        } else if (sent > 1) {
             EasyTpClient.setStatus("Sent " + sent + " teleports to " + destination, false);
         }
     }
@@ -232,14 +295,19 @@ public class EasyTpScreen extends Screen {
 
     @Override
     public boolean mouseScrolled(double mouseX, double mouseY, double horizontalAmount, double verticalAmount) {
-        if (verticalAmount == 0 || players.size() <= visibleRows) {
+        if (verticalAmount == 0) {
             return super.mouseScrolled(mouseX, mouseY, horizontalAmount, verticalAmount);
         }
         int delta = verticalAmount > 0 ? -1 : 1;
-        if (mouseX < width / 2.0) {
-            destScroll = clampScroll(destScroll + delta);
+        boolean left = mouseX < width / 2.0;
+        int count = itemCount(left);
+        if (count <= visibleRows) {
+            return super.mouseScrolled(mouseX, mouseY, horizontalAmount, verticalAmount);
+        }
+        if (left) {
+            leftScroll = clampScroll(leftScroll + delta, count);
         } else {
-            targetScroll = clampScroll(targetScroll + delta);
+            rightScroll = clampScroll(rightScroll + delta, count);
         }
         rebuild();
         return true;
@@ -250,8 +318,8 @@ public class EasyTpScreen extends Screen {
     @Override
     public void renderBackground(DrawContext context, int mouseX, int mouseY, float delta) {
         super.renderBackground(context, mouseX, mouseY, delta);
-        drawPanel(context, leftX, "Destination");
-        drawPanel(context, rightX, "Target");
+        drawPanel(context, leftX, "Teleport");
+        drawPanel(context, rightX, "Destination");
     }
 
     private void drawPanel(DrawContext context, int x, String title) {
@@ -274,20 +342,35 @@ public class EasyTpScreen extends Screen {
         Text titleText = Text.literal("Easy TP");
         context.drawTextWithShadow(textRenderer, titleText,
                 width / 2 - textRenderer.getWidth(titleText) / 2, 14, 0xFFFFFFFF);
-        Text hint = Text.literal("Pick a destination, then click a player to teleport them (Shift+click = multi-select)");
+        Text hint = Text.literal("Pick a destination on the right, then click who to teleport (Shift+click = multi-select)");
         context.drawTextWithShadow(textRenderer, hint,
                 width / 2 - textRenderer.getWidth(hint) / 2, 28, 0xFFAAAAAA);
 
         String self = MinecraftClient.getInstance().getSession().getUsername();
+        int h = ROW_H - 2;
 
         for (Row row : rows) {
-            boolean selected = row.left() ? row.name().equals(destination) : targets.contains(row.name());
-            int h = ROW_H - 2;
+            // EVERYONE row
+            if (row.name() == null) {
+                boolean active = everyoneSelected();
+                context.fill(row.x(), row.y(), row.x() + row.w(), row.y() + h,
+                        active ? COLOR_EVERYONE_ACTIVE : COLOR_EVERYONE_IDLE);
+                drawOutline(context, row.x(), row.y(), row.w(), h, COLOR_EVERYONE_BORDER);
+
+                Text label = Text.literal("EVERYONE (" + playerNames.size() + ")")
+                        .formatted(Formatting.GOLD, Formatting.BOLD);
+                context.drawTextWithShadow(textRenderer, label,
+                        row.x() + row.w() / 2 - textRenderer.getWidth(label) / 2,
+                        row.y() + (h - 8) / 2, 0xFFFFFFFF);
+                continue;
+            }
+
+            boolean selected = row.left() ? targets.contains(row.name()) : row.name().equals(destination);
             if (selected) {
                 context.fill(row.x(), row.y(), row.x() + row.w(), row.y() + h,
-                        row.left() ? COLOR_DEST : COLOR_TARGET);
+                        row.left() ? COLOR_TARGET : COLOR_DEST);
                 drawOutline(context, row.x(), row.y(), row.w(), h,
-                        row.left() ? COLOR_DEST_BORDER : COLOR_TARGET_BORDER);
+                        row.left() ? COLOR_TARGET_BORDER : COLOR_DEST_BORDER);
             }
 
             PlayerSkinDrawer.draw(context, row.entry().getSkinTextures(), row.x() + 5, row.y() + (h - HEAD) / 2, HEAD);
@@ -305,8 +388,8 @@ public class EasyTpScreen extends Screen {
                     rightX + colW / 2 - textRenderer.getWidth(empty) / 2, listTop + 8, 0xFF888888);
         }
 
-        drawScrollbar(context, leftX, destScroll);
-        drawScrollbar(context, rightX, targetScroll);
+        drawScrollbar(context, leftX, leftScroll, itemCount(true));
+        drawScrollbar(context, rightX, rightScroll, itemCount(false));
 
         String status = EasyTpClient.getStatusText();
         if (!status.isEmpty()) {
@@ -317,13 +400,13 @@ public class EasyTpScreen extends Screen {
         }
     }
 
-    private void drawScrollbar(DrawContext context, int x, int scroll) {
-        if (players.size() <= visibleRows) {
+    private void drawScrollbar(DrawContext context, int x, int scroll, int count) {
+        if (count <= visibleRows) {
             return;
         }
         int trackH = visibleRows * ROW_H;
-        int barH = Math.max(12, trackH * visibleRows / players.size());
-        int maxScroll = players.size() - visibleRows;
+        int barH = Math.max(12, trackH * visibleRows / count);
+        int maxScroll = count - visibleRows;
         int barY = listTop + (trackH - barH) * scroll / maxScroll;
         context.fill(x + colW + 1, barY, x + colW + 3, barY + barH, 0xFF888888);
     }
