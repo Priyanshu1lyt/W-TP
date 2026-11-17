@@ -1,13 +1,12 @@
 package net.easytp;
 
+import com.mojang.blaze3d.platform.InputConstants;
 import net.fabricmc.api.ClientModInitializer;
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
-import net.fabricmc.fabric.api.client.keybinding.v1.KeyBindingHelper;
+import net.fabricmc.fabric.api.client.keymapping.v1.KeyMappingHelper;
 import net.fabricmc.fabric.api.client.message.v1.ClientReceiveMessageEvents;
-import net.minecraft.client.option.KeyBinding;
-import net.minecraft.client.util.InputUtil;
-import net.minecraft.util.Identifier;
-import org.lwjgl.glfw.GLFW;
+import net.minecraft.client.KeyMapping;
+import net.minecraft.resources.Identifier;
 
 import java.util.Locale;
 
@@ -20,7 +19,7 @@ public class EasyTpClient implements ClientModInitializer {
 
     private static final long ERROR_WINDOW_MS = 2000;
 
-    private static KeyBinding openKey;
+    private static KeyMapping openKey;
 
     // Simple status line shown at the bottom of the GUI.
     private static String statusText = "";
@@ -29,17 +28,18 @@ public class EasyTpClient implements ClientModInitializer {
 
     @Override
     public void onInitializeClient() {
-        KeyBinding.Category category = KeyBinding.Category.create(Identifier.of(MOD_ID, "main"));
-        openKey = KeyBindingHelper.registerKeyBinding(new KeyBinding(
+        KeyMapping.Category category = KeyMapping.Category.register(
+                Identifier.fromNamespaceAndPath(MOD_ID, "main"));
+        openKey = KeyMappingHelper.registerKeyMapping(new KeyMapping(
                 "key.easytp.open",
-                InputUtil.Type.KEYSYM,
-                GLFW.GLFW_KEY_P,
+                InputConstants.Type.KEYSYM,
+                InputConstants.KEY_P,
                 category
         ));
 
         ClientTickEvents.END_CLIENT_TICK.register(client -> {
-            while (openKey.wasPressed()) {
-                if (client.currentScreen == null && client.player != null) {
+            while (openKey.consumeClick()) {
+                if (client.screen == null && client.player != null) {
                     client.setScreen(new EasyTpScreen());
                 }
             }
